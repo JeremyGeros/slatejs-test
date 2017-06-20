@@ -39,6 +39,58 @@ function listItemNode(props) {
 }
 
 
+class CheckListItem extends React.Component {
+
+  /**
+   * On change, set the new checked value on the block.
+   *
+   * @param {Event} e
+   */
+
+  onChange = (e) => {
+    const checked = e.target.checked
+    const { editor, node } = this.props
+    const state = editor
+      .getState()
+      .transform()
+      .setNodeByKey(node.key, { data: { checked }})
+      .apply()
+
+    editor.onChange(state)
+  }
+
+  /**
+   * Render a check list item, using `contenteditable="false"` to embed the
+   * checkbox right next to the block's text.
+   *
+   * @return {Element}
+   */
+
+  render = () => {
+    const { attributes, children, node } = this.props
+    const checked = node.data.get('checked')
+    return (
+      <div
+        className="check-list-item"
+        contentEditable={false}
+        {...attributes}
+      >
+        <span>
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={this.onChange}
+          />
+        </span>
+        <span contentEditable suppressContentEditableWarning>
+          {children}
+        </span>
+      </div>
+    )
+  }
+
+}
+
 class ImageItem extends Component {
 
   onDrag = (e, data) => {
@@ -46,11 +98,10 @@ class ImageItem extends Component {
     const {editor, node} = this.props
     // console.log(node.data.merge)
     let nodeData = node.data.merge({width: node.data.get('width') + data.deltaX, height: node.data.get('height') + data.deltaY})
-    console.log(nodeData)
     let state = editor
       .getState()
       .transform()
-      .setNodeByKey(node.key, nodeData.toJS())
+      .setNodeByKey(node.key, {data: nodeData.toJS()})
       .apply()
     editor.onChange(state)
   }
@@ -64,7 +115,7 @@ class ImageItem extends Component {
     if (active) {
       return (
         <div className="image-resizable active">
-          <img src={src} className={className} {...this.props.attributes} />
+          <img src={src} width={node.data.get('width')} height={node.data.get('height')} className={className} {...this.props.attributes} />
           <div className="resizable">
             <Draggable onDrag={this.onDrag}><div className="top-left-handle handle"/></Draggable>
             <Draggable onDrag={this.onDrag}><div className="top-right-handle handle"/></Draggable>
@@ -75,7 +126,7 @@ class ImageItem extends Component {
       )
     } else {
       return (
-        <img src={src} className={className} {...this.props.attributes} />
+        <img src={src} width={node.data.get('width')} height={node.data.get('height')} className={className} {...this.props.attributes} />
       )
     }
   }
@@ -193,7 +244,8 @@ const schema = {
     'table': tableNode,
     'table-row': tableRowNode,
     'table-cell': tableCellNode,
-    'image': ImageItem
+    'image': ImageItem,
+    'check-list-item': CheckListItem,
   },
   marks: {
     bold: boldMark,
@@ -235,6 +287,27 @@ class App extends Component {
   }
 
   onKeyDown = (e, data, editorState) => {
+    if (data.key == 'enter' && editorState.startBlock.type == 'check-list-item') {
+      return editorState
+        .transform()
+        .splitBlock()
+        .setBlock({ data: { checked: false }})
+        .apply()
+
+    }
+
+    if (
+      data.key == 'backspace' &&
+      editorState.isCollapsed &&
+      editorState.startBlock.type == 'check-list-item' &&
+      editorState.selection.startOffset == 0
+    ) {
+      return editorState
+        .transform()
+        .setBlock('paragraph')
+        .apply()
+    }
+
     if (!data.isMod) return
     let mark
 
@@ -302,17 +375,15 @@ class App extends Component {
     let transform = editorState.transform()
     const { document } = editorState
 
-    
     // Handle the extra wrapping required for list buttons.
-    if (type == 'bulleted-list' && type == 'numbered-list') {
+    if (type == 'bulleted-list' || type == 'numbered-list') {
       const isList = editList.utils.isSelectionInList(editorState)
       const isType = editorState.blocks.some((block) => {
         return !!document.getClosest(block.key, parent => parent.type == type)
       })
 
-
       if (isList && isType) {
-        editList.transforms.unwrapList(transform.setBlock(DEFAULT_NODE))
+        editList.transforms.unwrapList(transform)
       } else if (isList) {
         let otherType = type == 'bulleted-list' ? 'numbered-list' : 'bulleted-list'
         let listNode = null;
@@ -413,6 +484,7 @@ class App extends Component {
         {this.renderBlockButton('table', 'view_module')}
         {this.renderBlockButton('insertRow', 'keyboard_arrow_down')}
         {this.renderBlockButton('insertColumn', 'keyboard_arrow_right')}
+        {this.renderBlockButton('check-list-item', 'check_circle')}
         <span className="button" onMouseDown={this.onClickImage}>
           <span className="material-icons">image</span>
         </span>
